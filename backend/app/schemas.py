@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
+from datetime import datetime # Ditambahkan untuk field tanggal
 
 class Topic(BaseModel):
     """
@@ -58,6 +59,147 @@ class SearchResponse(BaseModel):
     """
     query: str
     results: List[SearchResultItem]
+
+# --- Skema untuk User ---
+class UserBase(BaseModel):
+    email: str = Field(..., example="user@example.com")
+    username: str = Field(..., example="johndoe")
+    full_name: Optional[str] = Field(None, example="John Doe")
+    profile_picture_url: Optional[str] = Field(None, example="https://example.com/profile.jpg")
+
+class UserCreate(UserBase):
+    password: str = Field(..., min_length=8, example="strongpassword123")
+
+class UserRead(UserBase):
+    id: int
+    xp_points: int = 0
+    streak_days: int = 0
+    created_at: datetime # Impor datetime
+    is_active: bool = True
+
+    class Config:
+        orm_mode = True
+
+class UserPublic(BaseModel): # Untuk leaderboard atau tampilan publik
+    id: int
+    username: str
+    xp_points: int
+    profile_picture_url: Optional[str] = None
+    # Mungkin tambahkan jumlah lencana atau info publik lainnya
+
+    class Config:
+        orm_mode = True
+
+class UserUpdate(BaseModel):
+    email: Optional[str] = None
+    full_name: Optional[str] = None
+    profile_picture_url: Optional[str] = None
+    # Jangan izinkan update username, xp, streak, password secara langsung melalui ini
+
+# --- Skema untuk Badge ---
+class BadgeBase(BaseModel):
+    name: str = Field(..., example="Pionir Belajar")
+    description: Optional[str] = Field(None, example="Diberikan untuk menyelesaikan modul pertama.")
+    icon_url: Optional[str] = Field(None, example="https://example.com/badge_pionir.svg")
+    criteria: Optional[str] = Field(None, example="Selesaikan 1 modul.")
+
+class BadgeCreate(BadgeBase):
+    pass
+
+class BadgeRead(BadgeBase):
+    id: int
+
+    class Config:
+        orm_mode = True
+
+# --- Skema untuk UserBadge ---
+class UserBadgeRead(BaseModel):
+    awarded_at: datetime # Impor datetime
+    badge: BadgeRead # Nested skema BadgeRead
+
+    class Config:
+        orm_mode = True
+
+# Tambahkan UserRead untuk menyertakan lencana pengguna
+class UserReadWithBadges(UserRead):
+    badges: List[UserBadgeRead] = []
+
+
+# --- Skema untuk ForumPost ---
+class PostBase(BaseModel):
+    title: str = Field(..., min_length=5, max_length=255, example="Bagaimana cara memulai dengan FastAPI?")
+    content: str = Field(..., min_length=20, description="Konten utama postingan forum.")
+
+class PostCreate(PostBase):
+    pass # author_id akan diambil dari pengguna yang terotentikasi
+
+class PostUpdate(BaseModel):
+    title: Optional[str] = Field(None, min_length=5, max_length=255)
+    content: Optional[str] = Field(None, min_length=20)
+
+class PostAuthor(BaseModel): # Skema sederhana untuk info penulis dalam PostRead
+    id: int
+    username: str
+    profile_picture_url: Optional[str] = None
+    class Config:
+        orm_mode = True
+
+class PostRead(PostBase):
+    id: int
+    author_id: int
+    author: PostAuthor # Informasi penulis yang disederhanakan
+    created_at: datetime # Impor datetime
+    updated_at: Optional[datetime] = None # Impor datetime
+    upvotes: int = 0
+    # reply_count: int = 0 # Bisa ditambahkan jika dihitung di query
+
+    class Config:
+        orm_mode = True
+
+# --- Skema untuk ForumReply ---
+class ReplyBase(BaseModel):
+    content: str = Field(..., min_length=1, description="Konten balasan.")
+
+class ReplyCreate(ReplyBase):
+    post_id: int # Perlu post_id saat membuat balasan
+    parent_reply_id: Optional[int] = None # Untuk balasan berulir
+
+class ReplyUpdate(BaseModel):
+    content: Optional[str] = Field(None, min_length=1)
+
+class ReplyRead(ReplyBase):
+    id: int
+    post_id: int
+    author_id: int
+    author: PostAuthor # Informasi penulis yang disederhanakan
+    parent_reply_id: Optional[int] = None
+    created_at: datetime # Impor datetime
+    updated_at: Optional[datetime] = None # Impor datetime
+    upvotes: int = 0
+    # child_replies: List['ReplyRead'] = [] # Untuk balasan berulir, perlu forward ref atau update_forward_refs()
+
+    class Config:
+        orm_mode = True
+
+# Untuk PostReadWithReplies, kita bisa mendefinisikan ReplyRead yang tidak menyertakan child_replies
+# untuk menghindari rekursi tak terbatas jika skema dikembalikan langsung, atau menangani kedalaman di query.
+# Atau, buat versi sederhana dari ReplyRead untuk PostReadWithReplies.
+class SimpleReplyRead(ReplyBase): # Versi sederhana untuk menghindari rekursi dalam PostReadWithReplies
+    id: int
+    author: PostAuthor
+    created_at: datetime
+    upvotes: int
+    parent_reply_id: Optional[int] = None
+    # Tidak ada child_replies di sini untuk menghindari rekursi saat mengambil postingan dengan semua balasan
+    class Config:
+        orm_mode = True
+
+
+class PostReadWithReplies(PostRead):
+    replies: List[SimpleReplyRead] = [] # Menggunakan SimpleReplyRead
+
+# Memperbarui forward references untuk ReplyRead jika menggunakan self-referencing type hint secara langsung
+# ReplyRead.update_forward_refs() # Panggil ini di akhir file jika 'ReplyRead' digunakan di List['ReplyRead']
 
 # Jika Anda ingin contoh data untuk pengujian atau dokumentasi:
 # example_topic = Topic(title="Contoh Topik", description="Ini adalah contoh topik.")
