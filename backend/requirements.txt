@@ -1,0 +1,18 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg2-binary
+python-dotenv
+google-generativeai # Menggantikan openai
+google-api-python-client
+beautifulsoup4
+langchain
+langchain-google-genai
+langchain-community
+requests
+sentence-transformers
+pgvector
+passlib[bcrypt]
+python-jose[cryptography]
+Authlib
+itsdangerous

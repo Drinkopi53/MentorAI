@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  db:
+    image: pgvector/pgvector:pg15 # Menggunakan image yang sudah termasuk pgvector
+    container_name: mentorai_db
+    restart: always
+    ports:
+      - "5432:5432" # Ekspos port db ke host (opsional, untuk debugging)
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: mentorai_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d mentorai_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    container_name: mentorai_backend
+    restart: always
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app # Mount kode backend untuk hot-reloading
+    env_file:
+      - ./backend/.env # Muat variabel lingkungan dari file .env backend
+    depends_on:
+      db:
+        condition: service_healthy # Tunggu hingga db sehat
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --root-path /api
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile # Kita perlu membuat Dockerfile untuk frontend
+    container_name: mentorai_frontend
+    restart: always
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend/src:/app/src # Mount source code untuk hot-reloading
+      - ./frontend/public:/app/public
+    depends_on:
+      - backend
+    environment:
+      - REACT_APP_API_BASE_URL=http://backend:8000/api
+      # Perhatikan: REACT_APP_API_BASE_URL menggunakan nama layanan 'backend'
+      # Ini karena frontend akan berjalan di dalam jaringan Docker.
+      # Jika Anda menjalankan frontend secara lokal (npm start) dan backend di Docker,
+      # Anda akan menggunakan http://localhost:8000/api dari frontend/.env
+      # Jika menjalankan keduanya secara lokal, juga http://localhost:8000/api
+      # Jika menjalankan keduanya di docker-compose, 'http://backend:8000' adalah benar
+
+volumes:
+  postgres_data:
+    driver: local

@@ -1,0 +1,146 @@
+name: Deploy MentorAI
+
+on:
+  push:
+    branches:
+      - main # Pipeline ini hanya berjalan pada push ke cabang main
+
+jobs:
+  deploy-frontend:
+    name: Build and Deploy Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./frontend # Semua perintah dijalankan dari direktori frontend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18' # Gunakan versi Node.js yang sesuai dengan proyek Anda
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json # Path ke package-lock.json
+
+      - name: Install Dependencies
+        run: npm ci # Gunakan npm ci untuk instalasi yang lebih cepat dan dapat diandalkan di CI
+
+      - name: Build React App
+        run: npm run build
+        env:
+          # Pastikan variabel lingkungan yang diperlukan untuk build tersedia
+          # Misalnya, jika REACT_APP_API_BASE_URL diperlukan saat build time (bukan runtime)
+          # REACT_APP_API_BASE_URL: ${{ secrets.REACT_APP_API_BASE_URL_PROD }}
+          # CI: false # Jika ada warning yang menghentikan build karena diperlakukan sebagai error
+          NODE_ENV: production
+
+
+      - name: Deploy to Vercel (Placeholder)
+        # Langkah ini adalah placeholder. Anda perlu menginstal dan mengkonfigurasi Vercel CLI
+        # atau menggunakan GitHub Action resmi dari Vercel.
+        # Contoh menggunakan Vercel CLI:
+        # env:
+        #   VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        #   VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        #   VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }} # Token Vercel untuk otentikasi
+        # run: npx vercel --prod --token ${{ secrets.VERCEL_TOKEN }} --scope ${{ secrets.VERCEL_ORG_ID }}
+        # Atau menggunakan Vercel Action:
+        # uses: amondnet/vercel-action@v20
+        # with:
+        #   vercel-token: ${{ secrets.VERCEL_TOKEN }}
+        #   vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+        #   vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+        #   vercel-project-path: 'frontend' # Path ke direktori frontend Anda
+        #   vercel-cli-version: LATEST # Atau versi spesifik
+        #   production: true
+        run: echo "Placeholder: Deploy frontend ke Vercel di sini."
+
+  deploy-backend:
+    name: Build and Push Backend Docker Image
+    runs-on: ubuntu-latest
+    needs: deploy-frontend # Opsional: jalankan setelah frontend berhasil di-deploy
+
+    permissions:
+      contents: read
+      packages: write # Diperlukan untuk push ke GitHub Container Registry (ghcr.io)
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU (for multi-platform builds, optional)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }} # Pengguna yang memicu workflow
+          password: ${{ secrets.GITHUB_TOKEN }} # Token GitHub Actions otomatis
+
+      # Anda bisa mengganti ghcr.io dengan registri lain seperti Docker Hub
+      # Jika menggunakan Docker Hub:
+      # - name: Log in to Docker Hub
+      #   uses: docker/login-action@v3
+      #   with:
+      #     username: ${{ secrets.DOCKER_USERNAME }}
+      #     password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/mentorai-backend # Ganti 'mentorai-backend' jika perlu
+          # Contoh tags:
+          # type=schedule
+          # type=ref,event=branch
+          # type=ref,event=pr
+          # type=semver,pattern={{version}}
+          # type=semver,pattern={{major}}.{{minor}}
+          tags: |
+            type=sha,prefix=,suffix=,format=short
+            latest
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend # Path ke direktori backend Anda yang berisi Dockerfile
+          file: ./backend/Dockerfile
+          push: true # Push image setelah build berhasil
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # platforms: linux/amd64,linux/arm64 # Jika Anda memerlukan build multi-platform
+
+    # Langkah placeholder untuk men-deploy image backend (misalnya ke Kubernetes, Cloud Run, dll.)
+    # Ini akan sangat bergantung pada platform hosting Anda.
+    # Contoh:
+    # - name: Deploy to Cloud Run (Placeholder)
+    #   run: echo "Placeholder: Deploy backend image ${{ steps.meta.outputs.tags }} ke Cloud Run."
+    #   # gcloud run deploy mentorai-backend --image ${{ steps.meta.outputs.tags }} ...
+```
+
+Beberapa poin penting tentang file workflow ini:
+*   **Trigger**: Kedua pekerjaan (`deploy-frontend` dan `deploy-backend`) akan dipicu hanya ketika ada `push` ke cabang `main`.
+*   **`deploy-frontend`**:
+    *   Menggunakan `actions/checkout@v4` untuk mengambil kode.
+    *   Menggunakan `actions/setup-node@v4` untuk mengatur lingkungan Node.js. `cache: 'npm'` dan `cache-dependency-path` digunakan untuk caching dependensi.
+    *   `npm ci` digunakan untuk menginstal dependensi. Ini lebih cepat dan lebih dapat diandalkan untuk CI daripada `npm install`.
+    *   `npm run build` membangun aplikasi React. Variabel lingkungan seperti `REACT_APP_API_BASE_URL_PROD` mungkin perlu diatur di sini jika diperlukan saat build time.
+    *   Langkah deploy ke Vercel adalah **placeholder**. Anda perlu menggantinya dengan implementasi Vercel CLI atau GitHub Action resmi dari Vercel, dan mengatur `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID` sebagai secrets di repositori GitHub Anda.
+*   **`deploy-backend`**:
+    *   `needs: deploy-frontend`: Ini opsional. Jika Anda ingin backend hanya di-deploy jika frontend berhasil, Anda bisa menyertakan ini.
+    *   `permissions`: `packages: write` diperlukan jika Anda mendorong image ke GitHub Container Registry (ghcr.io).
+    *   `docker/setup-qemu-action` dan `docker/setup-buildx-action`: Berguna untuk menyiapkan lingkungan build Docker yang lebih canggih, termasuk build multi-platform (dikomentari saat ini).
+    *   `docker/login-action`: Digunakan untuk login ke registri kontainer. Contoh ini menggunakan GitHub Container Registry. Anda perlu menggantinya jika menggunakan Docker Hub atau registri lain, dan mengatur secrets yang sesuai (misalnya, `DOCKER_USERNAME`, `DOCKER_PASSWORD`).
+    *   `docker/metadata-action`: Secara otomatis menghasilkan tag dan label untuk image Docker Anda berdasarkan event GitHub (misalnya, SHA commit, tag `latest`).
+    *   `docker/build-push-action`: Membangun image Docker dari `backend/Dockerfile` dan mendorongnya ke registri. Ini juga mendukung caching (`cache-from`, `cache-to`) untuk mempercepat build berikutnya.
+    *   Langkah deploy backend (misalnya, ke Cloud Run, Kubernetes) juga merupakan **placeholder** dan perlu disesuaikan dengan infrastruktur hosting Anda.
+
+Pastikan untuk mengganti placeholder dan mengkonfigurasi secrets (seperti `VERCEL_TOKEN`, `GITHUB_TOKEN` (biasanya sudah ada), `DOCKER_USERNAME`, `DOCKER_PASSWORD`, dll.) di pengaturan repositori GitHub Anda agar pipeline ini berfungsi dengan benar.
