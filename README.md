@@ -2,12 +2,12 @@
 
 ## Gambaran Umum Proyek
 
-MentorAI adalah platform bertenaga AI yang dirancang untuk memberikan panduan dan dukungan yang dipersonalisasi kepada pengguna di berbagai domain. Ini memanfaatkan kekuatan model bahasa besar (LLM) melalui API OpenAI untuk menawarkan pengalaman bimbingan interaktif dan adaptif. Platform ini memungkinkan pengguna untuk mengimpor konten dari berbagai sumber seperti video YouTube, PDF, dan halaman web, lalu menggunakan konten ini untuk membuat basis pengetahuan yang dapat ditanyakan oleh pengguna.
+MentorAI adalah platform bertenaga AI yang dirancang untuk memberikan panduan dan dukungan yang dipersonalisasi kepada pengguna di berbagai domain. Ini memanfaatkan kekuatan model bahasa besar (LLM) melalui Gemini API dari Google untuk menawarkan pengalaman bimbingan interaktif dan adaptif. Platform ini memungkinkan pengguna untuk mengimpor konten dari berbagai sumber seperti video YouTube, PDF, dan halaman web, lalu menggunakan konten ini untuk membuat basis pengetahuan yang dapat ditanyakan oleh pengguna.
 
 Arsitektur proyek terdiri dari:
 
 *   **Frontend:** Aplikasi React yang menyediakan antarmuka pengguna untuk berinteraksi dengan platform.
-*   **Backend:** API FastAPI yang menangani logika bisnis, interaksi database, dan integrasi dengan layanan eksternal seperti OpenAI dan YouTube.
+*   **Backend:** API FastAPI yang menangani logika bisnis, interaksi database, dan integrasi dengan layanan eksternal seperti Gemini API dan YouTube.
 *   **Database:** PostgreSQL dengan ekstensi `pgvector` untuk menyimpan data pengguna, konten yang diproses, dan embedding vektor untuk pencarian semantik.
 
 ## Prasyarat
@@ -56,14 +56,14 @@ Buat file bernama `.env` di direktori `/backend` dan tambahkan variabel berikut:
 
 ```env
 DATABASE_URL=postgresql://user:password@db:5432/mentorai_db
-OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+GEMINI_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 YOUTUBE_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 JWT_SECRET_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
 Ganti nilai placeholder dengan kredensial dan kunci API Anda yang sebenarnya:
 *   `DATABASE_URL`: URL koneksi untuk database PostgreSQL Anda. Jika menggunakan Docker Compose seperti yang disediakan, `user`, `password`, dan `mentorai_db` harus cocok dengan yang dikonfigurasi di `docker-compose.yml`.
-*   `OPENAI_API_KEY`: Kunci API OpenAI Anda.
+*   `GEMINI_API_KEY`: Kunci API Gemini Anda dari Google AI Studio atau Google Cloud.
 *   `YOUTUBE_API_KEY`: Kunci API Google Cloud Anda yang diaktifkan untuk YouTube Data API v3.
 *   `JWT_SECRET_KEY`: Kunci rahasia yang kuat untuk menandatangani token JWT. Anda dapat membuatnya menggunakan `openssl rand -hex 32`.
 
