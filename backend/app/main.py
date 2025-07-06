@@ -246,3 +246,45 @@ if __name__ == "__main__":
     # Konfigurasi uvicorn di docker-compose.yml (`app.main:app --reload --host 0.0.0.0 --port 8000 --root-path /api`)
     # adalah yang akan digunakan saat menjalankan dengan Docker.
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True) # Menambahkan reload=True untuk konsistensi
+
+# --- Endpoint Chatbot RAG ---
+from fastapi.responses import StreamingResponse
+from .chatbot import stream_chatbot_response # Fungsi streaming dari chatbot.py
+from langchain_core.runnables import RunnableConfig # Untuk config di stream
+
+class ChatRequest(BaseModel):
+    question: str = Field(..., min_length=1, max_length=1000, description="Pertanyaan pengguna untuk chatbot.")
+    # Anda bisa menambahkan session_id atau user_id di sini jika diperlukan untuk histori chat
+    # session_id: Optional[str] = None
+
+@app.post("/chat", tags=["Chatbot (RAG)"], summary="Berinteraksi dengan Tutor AI")
+async def chat_with_rag_bot(
+    request: ChatRequest
+):
+    """
+    Menerima pertanyaan pengguna dan mengalirkan (streams) jawaban yang dihasilkan oleh
+    Tutor AI berbasis RAG (Retrieval Augmented Generation).
+
+    Tutor AI akan menggunakan basis pengetahuan yang telah diindeks (konten pembelajaran)
+    untuk menemukan informasi yang relevan dan kemudian menggunakan model bahasa (Gemini)
+    untuk menghasilkan jawaban berdasarkan informasi tersebut.
+    """
+    print(f"Menerima permintaan chat: '{request.question}'")
+
+    try:
+        # Di sini Anda bisa membuat config jika perlu, misalnya untuk callbacks
+        # config = RunnableConfig(callbacks=[YourCallbackHandler()])
+        config = None # Untuk saat ini tidak ada config khusus
+
+        # Pastikan stream_chatbot_response adalah async generator
+        return StreamingResponse(
+            stream_chatbot_response(request.question, config=config),
+            media_type="text/event-stream"
+        )
+    except Exception as e:
+        print(f"Error pada endpoint /chat: {e}")
+        # Ini adalah fallback, idealnya stream_chatbot_response menangani error internalnya sendiri
+        # dan menghasilkan pesan error sebagai bagian dari stream.
+        async def error_stream():
+            yield f"Error: Terjadi kesalahan internal saat memproses permintaan chat Anda: {str(e)}"
+        return StreamingResponse(error_stream(), media_type="text/event-stream", status_code=500)

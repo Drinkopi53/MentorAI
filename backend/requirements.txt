@@ -7,6 +7,8 @@ google-generativeai # Menggantikan openai
 google-api-python-client
 beautifulsoup4
 langchain
+langchain-google-genai
+langchain-community
 requests
 sentence-transformers
 pgvector
