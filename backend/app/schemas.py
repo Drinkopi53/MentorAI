@@ -35,6 +35,30 @@ class CurriculumGoalRequest(BaseModel):
     """
     goal: str = Field(..., min_length=10, max_length=500, description="Tujuan pembelajaran yang ingin dicapai pengguna.", example="Saya ingin belajar membuat REST API dengan FastAPI dan Python.")
 
+
+class SearchResultItem(BaseModel):
+    """
+    Mewakili satu item hasil pencarian konten pembelajaran.
+    """
+    id: int
+    title: Optional[str] = None
+    source_url: Optional[str] = None
+    content_type: str # Akan menjadi nilai dari enum ContentType
+    text_chunk: str
+    # Anda bisa menambahkan 'similarity_score' jika dihitung dan ingin ditampilkan
+    # similarity_score: Optional[float] = None
+
+    class Config:
+        orm_mode = True # Untuk kompatibilitas dengan objek SQLAlchemy
+
+
+class SearchResponse(BaseModel):
+    """
+    Model respons untuk hasil pencarian.
+    """
+    query: str
+    results: List[SearchResultItem]
+
 # Jika Anda ingin contoh data untuk pengujian atau dokumentasi:
 # example_topic = Topic(title="Contoh Topik", description="Ini adalah contoh topik.")
 # example_module = Module(

@@ -5,9 +5,25 @@ from typing import List, Dict, Any
 from dotenv import load_dotenv
 
 from .schemas import Curriculum, Module, Topic # Pastikan path impor ini benar
+from sentence_transformers import SentenceTransformer # Untuk embedding
+from typing import List, Dict, Any, Optional # Tambahkan Optional
 
 # Muat variabel lingkungan dari .env jika ada (terutama untuk pengembangan lokal)
 load_dotenv()
+
+# Inisialisasi model embedding Sentence Transformer
+# Model ini akan dimuat sekali saat modul diimpor dan digunakan kembali.
+# Ini menghemat waktu pemuatan model pada setiap panggilan fungsi.
+# Pastikan model 'all-MiniLM-L6-v2' sudah di-cache atau dapat diunduh oleh lingkungan.
+# Dimensi embedding untuk 'all-MiniLM-L6-v2' adalah 384.
+try:
+    embedding_model_name = 'all-MiniLM-L6-v2'
+    embedding_model = SentenceTransformer(embedding_model_name)
+    print(f"Model Sentence Transformer '{embedding_model_name}' berhasil dimuat.")
+except Exception as e:
+    print(f"PERINGATAN PENTING: Gagal memuat model Sentence Transformer '{embedding_model_name}': {e}")
+    print("Fungsi get_embedding tidak akan berfungsi. Pastikan model tersedia atau ada koneksi internet untuk mengunduhnya.")
+    embedding_model = None # Set ke None jika gagal dimuat
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
@@ -246,6 +262,34 @@ async def generate_curriculum_from_goal(goal: str) -> Curriculum:
 #             print(f"Terjadi kesalahan selama pengujian: {e}")
 
 #     asyncio.run(main_test())
+
+
+def get_embedding(text: str) -> Optional[List[float]]:
+    """
+    Menghasilkan embedding vektor untuk teks yang diberikan menggunakan model Sentence Transformer.
+
+    Args:
+        text: Teks input yang akan di-embed.
+
+    Returns:
+        Daftar float yang mewakili embedding vektor (384 dimensi untuk 'all-MiniLM-L6-v2'),
+        atau None jika model embedding tidak berhasil dimuat atau teks kosong.
+    """
+    if embedding_model is None:
+        print("Error: Model embedding tidak tersedia. Tidak dapat menghasilkan embedding.")
+        return None
+    if not text or not text.strip():
+        print("Peringatan: Teks input untuk embedding kosong atau hanya berisi spasi.")
+        return None # Atau kembalikan embedding untuk string kosong jika model mendukungnya secara berbeda
+
+    try:
+        # Model SentenceTransformer.encode() mengembalikan array NumPy secara default.
+        # Kita perlu mengonversinya ke daftar Python standar untuk kompatibilitas JSON dan pgvector.
+        embedding_vector = embedding_model.encode(text)
+        return embedding_vector.tolist() # Konversi numpy.ndarray ke list[float]
+    except Exception as e:
+        print(f"Error saat menghasilkan embedding untuk teks '{text[:50]}...': {e}")
+        return None
 ```
 
 Beberapa catatan penting tentang implementasi ini:
