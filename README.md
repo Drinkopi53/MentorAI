@@ -7,7 +7,7 @@ MentorAI adalah platform bertenaga AI yang dirancang untuk memberikan panduan da
 Arsitektur proyek terdiri dari:
 
 *   **Frontend:** Aplikasi React yang menyediakan antarmuka pengguna untuk berinteraksi dengan platform.
-*   **Backend:** API FastAPI yang menangani logika bisnis, interaksi database, dan integrasi dengan layanan eksternal seperti Gemini AI dan YouTube.
+*   **Backend:** API FastAPI yang menangani logika bisnis, interaksi database, dan integrasi dengan layanan eksternal seperti OpenAI dan YouTube.
 *   **Database:** PostgreSQL dengan ekstensi `pgvector` untuk menyimpan data pengguna, konten yang diproses, dan embedding vektor untuk pencarian semantik.
 
 ## Prasyarat
@@ -63,7 +63,7 @@ JWT_SECRET_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 Ganti nilai placeholder dengan kredensial dan kunci API Anda yang sebenarnya:
 *   `DATABASE_URL`: URL koneksi untuk database PostgreSQL Anda. Jika menggunakan Docker Compose seperti yang disediakan, `user`, `password`, dan `mentorai_db` harus cocok dengan yang dikonfigurasi di `docker-compose.yml`.
-*   `GEMINI_API_KEY`: Kunci API Gemini AI Anda.
+*   `OPENAI_API_KEY`: Kunci API OpenAI Anda.
 *   `YOUTUBE_API_KEY`: Kunci API Google Cloud Anda yang diaktifkan untuk YouTube Data API v3.
 *   `JWT_SECRET_KEY`: Kunci rahasia yang kuat untuk menandatangani token JWT. Anda dapat membuatnya menggunakan `openssl rand -hex 32`.
 

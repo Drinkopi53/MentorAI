@@ -3,9 +3,11 @@ uvicorn[standard]
 sqlalchemy
 psycopg2-binary
 python-dotenv
-openai
+google-generativeai # Menggantikan openai
 google-api-python-client
 beautifulsoup4
+langchain
+requests
 sentence-transformers
 pgvector
 passlib[bcrypt]
