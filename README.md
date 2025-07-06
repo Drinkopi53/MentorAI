@@ -58,14 +58,20 @@ Buat file bernama `.env` di direktori `/backend` dan tambahkan variabel berikut:
 DATABASE_URL=postgresql://user:password@db:5432/mentorai_db
 GEMINI_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 YOUTUBE_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-JWT_SECRET_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+JWT_SECRET_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx_generate_a_strong_secret_key
+APP_BASE_URL=http://localhost:3000 # URL dasar frontend untuk redirect URI OAuth
+GOOGLE_CLIENT_ID=xxxxxxxxxxxxxxxxx.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=xxxxxxxxxxxxxxxxx
 ```
 
 Ganti nilai placeholder dengan kredensial dan kunci API Anda yang sebenarnya:
 *   `DATABASE_URL`: URL koneksi untuk database PostgreSQL Anda. Jika menggunakan Docker Compose seperti yang disediakan, `user`, `password`, dan `mentorai_db` harus cocok dengan yang dikonfigurasi di `docker-compose.yml`.
 *   `GEMINI_API_KEY`: Kunci API Gemini Anda dari Google AI Studio atau Google Cloud.
 *   `YOUTUBE_API_KEY`: Kunci API Google Cloud Anda yang diaktifkan untuk YouTube Data API v3.
-*   `JWT_SECRET_KEY`: Kunci rahasia yang kuat untuk menandatangani token JWT. Anda dapat membuatnya menggunakan `openssl rand -hex 32`.
+*   `JWT_SECRET_KEY`: Kunci rahasia yang kuat untuk menandatangani token JWT (gunakan `openssl rand -hex 32`).
+*   `APP_BASE_URL`: URL dasar tempat aplikasi frontend Anda berjalan. Ini digunakan untuk membangun URI pengalihan (redirect URI) untuk Google OAuth. Misalnya, `http://localhost:3000` untuk pengembangan lokal.
+*   `GOOGLE_CLIENT_ID`: Client ID Anda dari Google Cloud Console untuk kredensial OAuth 2.0.
+*   `GOOGLE_CLIENT_SECRET`: Client Secret Anda dari Google Cloud Console.
 
 ### 3. Penyiapan Backend
 

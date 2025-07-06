@@ -14,3 +14,5 @@ sentence-transformers
 pgvector
 passlib[bcrypt]
 python-jose[cryptography]
+Authlib
+itsdangerous

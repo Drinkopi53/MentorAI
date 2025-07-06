@@ -2,26 +2,25 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
-from .. import schemas, models, user_service, gamification_service # Menggunakan .. untuk impor dari direktori induk (app)
+from .. import schemas, models, user_service, gamification_service
 from ..database import get_db
-from passlib.context import CryptContext # Untuk hashing password
+from ..dependencies import require_active_user, require_premium_user # Impor dependensi otentikasi
+from passlib.context import CryptContext
+from pydantic import BaseModel # Untuk request body set-subscription
 
 router = APIRouter(
     prefix="/users",
-    tags=["Users & Gamification"], # Menggabungkan tag untuk kesederhanaan saat ini
+    tags=["Users & Gamification"],
     responses={404: {"description": "Not found"}},
 )
 
-# Pindahkan ini ke file auth_service.py atau user_service.py yang lebih lengkap di masa depan
+# Konteks password (bisa juga di auth_service.py atau user_service.py)
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
 
 def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
-
+# Endpoint ini tidak memerlukan otentikasi karena untuk membuat pengguna baru
 @router.post("/", response_model=schemas.UserRead, status_code=status.HTTP_201_CREATED)
 def create_user_endpoint(user: schemas.UserCreate, db: Session = Depends(get_db)):
     """
@@ -51,6 +50,7 @@ def create_user_endpoint(user: schemas.UserCreate, db: Session = Depends(get_db)
     db.refresh(new_db_user)
     return schemas.UserRead.from_orm(new_db_user)
 
+# Endpoint ini bisa publik
 @router.get("/leaderboard", response_model=List[schemas.UserPublic])
 def get_leaderboard_endpoint(skip: int = 0, limit: int = 10, db: Session = Depends(get_db)):
     """
@@ -70,36 +70,38 @@ def read_user_endpoint(user_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Pengguna tidak ditemukan.")
     return schemas.UserReadWithBadges.from_orm(db_user) # Pastikan UserReadWithBadges bisa handle relasi badges
 
-
-@router.post("/{user_id}/add-xp", response_model=schemas.UserRead)
-def add_xp_to_user_endpoint(user_id: int, points: int = 10, db: Session = Depends(get_db)):
+# Endpoint yang memerlukan otentikasi
+@router.post("/me/add-xp", response_model=schemas.UserRead, summary="Tambahkan XP ke Pengguna Saat Ini")
+def add_xp_to_current_user_endpoint(
+    points: int = 10,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_user)
+):
     """
-    **Endpoint Pengujian:** Menambahkan poin XP ke pengguna tertentu.
+    Menambahkan poin XP ke pengguna yang saat ini terotentikasi.
     """
-    updated_user = gamification_service.add_xp(db=db, user_id=user_id, points=points)
+    updated_user = gamification_service.add_xp(db=db, user_id=current_user.id, points=points)
+    # add_xp sekarang mengembalikan UserRead, jadi tidak perlu UserRead.from_orm() lagi
     if not updated_user:
-        raise HTTPException(status_code=404, detail=f"Pengguna dengan ID {user_id} tidak ditemukan atau gagal update XP.")
+        # Ini seharusnya tidak terjadi jika current_user valid, kecuali ada masalah DB
+        raise HTTPException(status_code=500, detail="Gagal memperbarui XP pengguna.")
     return updated_user
 
-@router.get("/{user_id}/check-badges", response_model=List[schemas.UserBadgeRead])
-def check_user_badges_endpoint(user_id: int, db: Session = Depends(get_db)):
+@router.get("/me/check-badges", response_model=List[schemas.UserBadgeRead], summary="Periksa Lencana untuk Pengguna Saat Ini")
+def check_current_user_badges_endpoint(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_user)
+):
     """
-    **Endpoint Pengujian:** Memeriksa dan memberikan lencana baru untuk pengguna tertentu.
+    Memeriksa dan memberikan lencana baru untuk pengguna yang saat ini terotentikasi.
     Mengembalikan daftar lencana yang BARU diberikan dalam panggilan ini.
     """
-    user = db.query(models.User).filter(models.User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail=f"Pengguna dengan ID {user_id} tidak ditemukan.")
-
-    newly_awarded_user_badges = gamification_service.check_and_award_new_badges(db=db, user=user)
-    # Skema UserBadgeRead mengharapkan objek UserBadge, bukan hanya BadgeRead
-    # jadi kita perlu memastikan ini dikonversi dengan benar jika diperlukan
-    # atau UserBadgeRead.from_orm(user_badge_model_instance)
+    # gamification_service.check_and_award_new_badges mengharapkan objek User model
+    newly_awarded_user_badges = gamification_service.check_and_award_new_badges(db=db, user=current_user)
     return [schemas.UserBadgeRead.from_orm(ub) for ub in newly_awarded_user_badges]
 
-
-# Endpoint untuk menginisialisasi lencana (hanya untuk admin atau setup awal)
-@router.post("/init-badges", summary="Inisialisasi Lencana Default (Admin/Setup)", include_in_schema=False) # Sembunyikan dari docs publik
+# Endpoint untuk menginisialisasi lencana (sebaiknya dilindungi oleh peran admin di masa depan)
+@router.post("/init-badges", summary="Inisialisasi Lencana Default (Setup)", include_in_schema=False)
 def initialize_default_badges_endpoint(db: Session = Depends(get_db)):
     # Di aplikasi nyata, ini harus dilindungi dan hanya bisa diakses oleh admin.
     try:
@@ -107,6 +109,54 @@ def initialize_default_badges_endpoint(db: Session = Depends(get_db)):
         return {"message": "Proses inisialisasi lencana default telah dijalankan."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gagal menginisialisasi lencana: {str(e)}")
+
+# --- Endpoint untuk Fitur Premium ---
+@router.get("/premium-feature", summary="Akses Fitur Premium (Contoh)")
+def get_premium_feature_data(current_user: models.User = Depends(require_premium_user)):
+    """
+    Endpoint contoh yang hanya dapat diakses oleh pengguna dengan status langganan 'premium'.
+    """
+    return {"message": f"Selamat datang di fitur premium, {current_user.username}! Data rahasia ada di sini.", "user_subscription": current_user.subscription_status}
+
+# --- Endpoint untuk Admin/Pengujian Mengubah Status Langganan ---
+class SubscriptionUpdateRequest(BaseModel):
+    subscription_status: str # Misal: "free", "premium"
+
+@router.post("/admin/set-subscription/{user_id}", response_model=schemas.UserRead, summary="Set Status Langganan Pengguna (Admin/Pengujian)")
+def set_user_subscription_status(
+    user_id: int,
+    request_body: SubscriptionUpdateRequest,
+    db: Session = Depends(get_db),
+    # current_admin: models.User = Depends(require_admin_user) # Di aplikasi nyata, ini harus dilindungi admin
+    current_user: models.User = Depends(require_active_user) # Untuk sekarang, pengguna aktif bisa mengubah (untuk tes)
+):
+    """
+    **Endpoint Pengujian/Admin:** Mengatur status langganan untuk pengguna tertentu.
+    Di aplikasi produksi, endpoint ini harus dilindungi dan hanya dapat diakses oleh admin.
+    """
+    # Untuk pengujian, kita biarkan pengguna aktif mengubah status pengguna lain.
+    # Di produksi, Anda akan memeriksa apakah current_user adalah admin.
+    # if not current_user.is_superuser: # Jika Anda punya field is_superuser
+    #     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Operasi tidak diizinkan.")
+
+    user_to_update = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user_to_update:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Pengguna dengan ID {user_id} tidak ditemukan.")
+
+    # Validasi status langganan yang masuk (opsional, bisa juga dengan Enum)
+    valid_statuses = ["free", "premium", "expired", "premium_plus"] # Contoh
+    if request_body.subscription_status not in valid_statuses:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Status langganan tidak valid. Pilih dari: {', '.join(valid_statuses)}")
+
+    user_to_update.subscription_status = request_body.subscription_status
+    try:
+        db.commit()
+        db.refresh(user_to_update)
+        return schemas.UserRead.from_orm(user_to_update)
+    except Exception as e:
+        db.rollback()
+        print(f"Error saat update status langganan untuk user {user_id}: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Gagal memperbarui status langganan.")
 
 ```
 Catatan:

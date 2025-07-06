@@ -24,6 +24,10 @@ class User(Base):
     xp_points = Column(Integer, default=0, nullable=False, index=True)
     streak_days = Column(Integer, default=0, nullable=False)
 
+    # Kolom untuk Otentikasi Google dan Langganan
+    google_id = Column(String(255), unique=True, nullable=True, index=True)
+    subscription_status = Column(String(50), default='free', nullable=False, index=True) # Misal: 'free', 'premium', 'premium_plus', 'expired'
+
     # Hubungan
     badges = relationship("UserBadge", back_populates="user")
     posts = relationship("ForumPost", back_populates="author")

@@ -2,16 +2,17 @@ from fastapi import APIRouter, Depends, HTTPException, status, Body
 from sqlalchemy.orm import Session, joinedload, selectinload
 from typing import List, Optional
 
-from .. import schemas, models, gamification_service # Menggunakan .. untuk impor dari direktori induk (app)
+from .. import schemas, models, gamification_service
 from ..database import get_db
+from ..dependencies import require_active_user # Impor dependensi otentikasi
 
 router = APIRouter(
-    prefix="/forum", # Awalan umum untuk semua endpoint forum
+    prefix="/forum",
     tags=["Forum"],
     responses={404: {"description": "Not found"}},
 )
 
-# --- Helper Functions (bisa dipindah ke forum_service.py jika kompleksitas meningkat) ---
+# --- Helper Functions ---
 
 def get_post_or_404(db: Session, post_id: int) -> models.ForumPost:
     post = db.query(models.ForumPost).filter(models.ForumPost.id == post_id).first()
@@ -30,36 +31,36 @@ def get_reply_or_404(db: Session, reply_id: int) -> models.ForumReply:
 @router.post("/posts", response_model=schemas.PostRead, status_code=status.HTTP_201_CREATED)
 def create_forum_post(
     post_in: schemas.PostCreate,
-    # Untuk saat ini, kita akan mensimulasikan author_id. Di aplikasi nyata, ini dari token Auth.
-    author_id: int = Body(..., example=1, description="ID pengguna yang membuat postingan (simulasi untuk saat ini)."),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_user) # Memerlukan pengguna aktif
 ):
     """
     Membuat postingan forum baru.
-    `author_id` disimulasikan dalam body request untuk pengembangan.
+    Author diambil dari pengguna yang terotentikasi.
     """
-    # Periksa apakah pengguna (author) ada
-    author = db.query(models.User).filter(models.User.id == author_id).first()
-    if not author:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Pengguna dengan ID {author_id} tidak ditemukan.")
-
-    db_post = models.ForumPost(**post_in.model_dump(), author_id=author_id)
+    db_post = models.ForumPost(**post_in.model_dump(), author_id=current_user.id)
     db.add(db_post)
 
-    # Gamifikasi: Tambah XP untuk membuat postingan dan periksa lencana
-    # Poin XP bisa dikonfigurasi
     xp_for_post = 25
-    gamification_service.add_xp(db=db, user_id=author_id, points=xp_for_post)
-    # check_and_award_new_badges sudah dipanggil di dalam add_xp jika user di-pass,
-    # atau kita bisa memanggilnya secara eksplisit di sini jika add_xp tidak menerimanya.
-    # Untuk konsistensi, kita pastikan user object diteruskan ke check_and_award_new_badges.
-    # gamification_service.check_and_award_new_badges(db=db, user=author) # Jika add_xp tidak melakukannya
+    # Penting: add_xp mengembalikan UserRead, bukan User model.
+    # check_and_award_new_badges mengharapkan User model.
+    # Jadi, kita perlu mengambil ulang user model atau memodifikasi layanan.
+    # Untuk saat ini, kita akan mengambil ulang user setelah add_xp.
+    gamification_service.add_xp(db=db, user_id=current_user.id, points=xp_for_post)
 
-    db.commit()
+    # Ambil ulang user object yang mungkin telah diubah oleh add_xp (misalnya, xp_points)
+    # sebelum memeriksa lencana.
+    updated_author_for_badge_check = db.query(models.User).filter(models.User.id == current_user.id).first()
+    if updated_author_for_badge_check:
+        gamification_service.check_and_award_new_badges(db=db, user=updated_author_for_badge_check)
+    else:
+        print(f"Peringatan: Gagal mengambil ulang pengguna {current_user.id} setelah menambah XP untuk pemeriksaan lencana.")
+
+    db.commit() # Commit utama untuk postingan dan potensi lencana dari check_and_award_new_badges
     db.refresh(db_post)
     return schemas.PostRead.from_orm(db_post)
 
-
+# Endpoint ini bisa publik
 @router.get("/posts", response_model=List[schemas.PostRead])
 def read_forum_posts(
     skip: int = 0,
@@ -100,18 +101,17 @@ def read_single_forum_post(post_id: int, db: Session = Depends(get_db)):
 def update_forum_post(
     post_id: int,
     post_in: schemas.PostUpdate,
-    # Di aplikasi nyata, periksa apakah pengguna yang terotentikasi adalah penulis postingan
-    # current_user_id: int = Depends(get_current_user_id_placeholder),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_user)
 ):
     """
     Memperbarui postingan forum yang ada.
-    Memerlukan otorisasi (pengguna harus menjadi penulis postingan).
+    Pengguna harus menjadi penulis postingan untuk mengedit.
     """
     db_post = get_post_or_404(db, post_id)
 
-    # if db_post.author_id != current_user_id:
-    #     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tidak diizinkan untuk mengedit postingan ini.")
+    if db_post.author_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tidak diizinkan untuk mengedit postingan ini.")
 
     update_data = post_in.model_dump(exclude_unset=True)
     for key, value in update_data.items():
@@ -125,17 +125,17 @@ def update_forum_post(
 @router.delete("/posts/{post_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_forum_post(
     post_id: int,
-    # current_user_id: int = Depends(get_current_user_id_placeholder),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_user)
 ):
     """
     Menghapus postingan forum.
-    Memerlukan otorisasi (pengguna harus menjadi penulis postingan atau admin).
+    Pengguna harus menjadi penulis postingan untuk menghapus (atau admin).
     """
     db_post = get_post_or_404(db, post_id)
 
-    # if db_post.author_id != current_user_id: # Tambahkan pemeriksaan admin jika perlu
-    #     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tidak diizinkan untuk menghapus postingan ini.")
+    if db_post.author_id != current_user.id: # Tambahkan pemeriksaan peran admin jika diperlukan
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tidak diizinkan untuk menghapus postingan ini.")
 
     db.delete(db_post)
     db.commit()
@@ -145,15 +145,17 @@ def delete_forum_post(
 @router.post("/posts/{post_id}/vote", response_model=schemas.PostRead)
 def vote_on_post(
     post_id: int,
-    vote_value: int = Body(..., embed=True, description="Nilai vote: 1 untuk upvote, -1 untuk downvote (jika diimplementasikan). Saat ini hanya upvote."),
-    # user_id: int = Depends(get_current_user_id_placeholder), # Untuk melacak siapa yang vote
-    db: Session = Depends(get_db)
+    vote_value: int = Body(..., embed=True, description="Nilai vote: 1 untuk upvote."),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_user) # Memerlukan pengguna aktif
 ):
     """
     Memberikan suara (upvote) pada postingan forum.
-    Fitur downvote dan pencegahan double-voting bisa ditambahkan.
+    Pengguna yang terotentikasi diperlukan untuk memberikan suara.
     """
     db_post = get_post_or_404(db, post_id)
+    # Di sini Anda bisa menambahkan logika untuk mencegah pengguna yang sama melakukan vote berkali-kali
+    # atau menyimpan catatan siapa yang melakukan vote.
     if vote_value == 1:
         db_post.upvotes = (db_post.upvotes or 0) + 1
         # Gamifikasi: Penulis postingan mendapatkan XP untuk upvote
@@ -174,21 +176,15 @@ def vote_on_post(
 @router.post("/posts/{post_id}/replies", response_model=schemas.ReplyRead, status_code=status.HTTP_201_CREATED)
 def create_forum_reply(
     post_id: int,
-    reply_in: schemas.ReplyCreate, # ReplyCreate seharusnya tidak butuh post_id lagi karena sudah di path
-    author_id: int = Body(..., example=1, description="ID pengguna yang membuat balasan (simulasi)."),
-    db: Session = Depends(get_db)
+    reply_in: schemas.ReplyCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_user) # Memerlukan pengguna aktif
 ):
     """
     Membuat balasan baru untuk postingan forum.
-    `author_id` disimulasikan. `parent_reply_id` opsional untuk balasan berulir.
+    Author diambil dari pengguna yang terotentikasi. `parent_reply_id` opsional.
     """
-    # Pastikan postingan ada
-    get_post_or_404(db, post_id) # Ini akan raise 404 jika post_id tidak valid
-
-    # Pastikan author ada
-    author = db.query(models.User).filter(models.User.id == author_id).first()
-    if not author:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Pengguna dengan ID {author_id} tidak ditemukan.")
+    get_post_or_404(db, post_id) # Pastikan postingan ada
 
     # Jika ada parent_reply_id, pastikan itu valid dan milik postingan yang sama
     if reply_in.parent_reply_id:
@@ -207,12 +203,16 @@ def create_forum_reply(
     db_reply = models.ForumReply(
         **reply_data,
         post_id=post_id,
-        author_id=author_id
+        author_id=current_user.id
     )
     db.add(db_reply)
 
     # Gamifikasi untuk balasan
-    gamification_service.add_xp(db=db, user_id=author_id, points=10) # Misal 10 XP per balasan
+    gamification_service.add_xp(db=db, user_id=current_user.id, points=10)
+    # Ambil ulang user model untuk pemeriksaan lencana
+    updated_author_for_badge_check = db.query(models.User).filter(models.User.id == current_user.id).first()
+    if updated_author_for_badge_check:
+        gamification_service.check_and_award_new_badges(db=db, user=updated_author_for_badge_check)
 
     db.commit()
     db.refresh(db_reply)
@@ -233,16 +233,16 @@ def read_single_forum_reply(reply_id: int, db: Session = Depends(get_db)):
 def update_forum_reply(
     reply_id: int,
     reply_in: schemas.ReplyUpdate,
-    # current_user_id: int = Depends(get_current_user_id_placeholder),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_user)
 ):
     """
     Memperbarui balasan forum.
-    Memerlukan otorisasi.
+    Pengguna harus menjadi penulis balasan untuk mengedit.
     """
     db_reply = get_reply_or_404(db, reply_id)
-    # if db_reply.author_id != current_user_id:
-    #     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tidak diizinkan untuk mengedit balasan ini.")
+    if db_reply.author_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tidak diizinkan untuk mengedit balasan ini.")
 
     update_data = reply_in.model_dump(exclude_unset=True)
     for key, value in update_data.items():
@@ -256,16 +256,16 @@ def update_forum_reply(
 @router.delete("/replies/{reply_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_forum_reply(
     reply_id: int,
-    # current_user_id: int = Depends(get_current_user_id_placeholder),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_user)
 ):
     """
     Menghapus balasan forum.
-    Memerlukan otorisasi.
+    Pengguna harus menjadi penulis balasan untuk menghapus (atau admin).
     """
     db_reply = get_reply_or_404(db, reply_id)
-    # if db_reply.author_id != current_user_id: # Tambahkan pemeriksaan admin jika perlu
-    #     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tidak diizinkan untuk menghapus balasan ini.")
+    if db_reply.author_id != current_user.id: # Tambahkan pemeriksaan peran admin jika diperlukan
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tidak diizinkan untuk menghapus balasan ini.")
 
     db.delete(db_reply)
     db.commit()
@@ -276,13 +276,15 @@ def delete_forum_reply(
 def vote_on_reply(
     reply_id: int,
     vote_value: int = Body(..., embed=True, description="Nilai vote: 1 untuk upvote."),
-    # user_id: int = Depends(get_current_user_id_placeholder),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_user) # Memerlukan pengguna aktif
 ):
     """
     Memberikan suara (upvote) pada balasan forum.
+    Pengguna yang terotentikasi diperlukan untuk memberikan suara.
     """
     db_reply = get_reply_or_404(db, reply_id)
+    # Tambahkan logika untuk mencegah vote ganda jika perlu
     if vote_value == 1:
         db_reply.upvotes = (db_reply.upvotes or 0) + 1
         # Gamifikasi: Penulis balasan mendapatkan XP untuk upvote

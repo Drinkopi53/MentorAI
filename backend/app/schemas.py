@@ -76,6 +76,7 @@ class UserRead(UserBase):
     streak_days: int = 0
     created_at: datetime # Impor datetime
     is_active: bool = True
+    subscription_status: str = Field(default='free', example='free')
 
     class Config:
         orm_mode = True
@@ -85,6 +86,7 @@ class UserPublic(BaseModel): # Untuk leaderboard atau tampilan publik
     username: str
     xp_points: int
     profile_picture_url: Optional[str] = None
+    subscription_status: str = Field(default='free', example='free') # Mungkin tidak ingin ini publik, tergantung kebutuhan
     # Mungkin tambahkan jumlah lencana atau info publik lainnya
 
     class Config:
@@ -203,6 +205,22 @@ class PostReadWithReplies(PostRead):
 
 # Jika Anda ingin contoh data untuk pengujian atau dokumentasi:
 # example_topic = Topic(title="Contoh Topik", description="Ini adalah contoh topik.")
+
+# --- Skema untuk Token JWT ---
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+class TokenData(BaseModel):
+    # Payload yang akan kita masukkan ke dalam JWT dan dapat diekstrak kembali.
+    # 'sub' biasanya digunakan untuk subject (misalnya username atau user_id).
+    # Kita akan menggunakan user_id sebagai 'sub' untuk identifikasi unik.
+    sub: str # Seharusnya user_id, tapi JWT spec sering menggunakan string untuk 'sub'
+    user_id: Optional[int] = None # Untuk kemudahan akses setelah decode
+    username: Optional[str] = None # Bisa juga disertakan jika berguna
+    role: Optional[str] = None # Misal 'free_user', 'premium_user'
+    # Anda bisa menambahkan klaim lain seperti 'exp' (expiration time) di sini,
+    # tetapi 'exp' biasanya ditangani oleh pustaka JWT saat pembuatan token.
 # example_module = Module(
 #     title="Contoh Modul",
 #     description="Ini adalah contoh modul.",

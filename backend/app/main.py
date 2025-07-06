@@ -18,8 +18,9 @@ from bs4 import BeautifulSoup # Untuk parsing HTML judul di endpoint indeks
 # Panggil create_db_and_tables() di sini atau gunakan event handler startup.
 # Menggunakan event handler lebih disarankan untuk aplikasi FastAPI.
 
-from .routers import users as usersRouter # Impor router pengguna
-from .routers import forum as forumRouter # Impor router forum
+from .routers import users as usersRouter
+from .routers import forum as forumRouter
+from .routers import auth as authRouter # Impor router otentikasi
 
 # Aplikasi FastAPI utama. Jika menggunakan --root-path /api di docker-compose,
 # semua rute yang didefinisikan di sini akan secara otomatis diawali dengan /api.
@@ -242,9 +243,12 @@ async def index_content_from_url_endpoint(
 # app.include_router(content_sources.router, prefix="/content", tags=["Content Sources"])
 
 # Sertakan router untuk pengguna dan forum
-# Prefix /api akan ditangani oleh Uvicorn jika --root-path /api digunakan
-app.include_router(usersRouter.router) # Prefix sudah didefinisikan di dalam router users.py
-app.include_router(forumRouter.router)   # Prefix sudah didefinisikan di dalam router forum.py
+# Prefix /api akan ditangani oleh Uvicorn jika --root-path /api digunakan.
+# Jadi, kita tidak perlu menambahkan /api lagi di sini.
+# Router itu sendiri sudah memiliki prefix (misal, /users, /forum, /auth).
+app.include_router(authRouter.router)
+app.include_router(usersRouter.router)
+app.include_router(forumRouter.router)
 
 
 if __name__ == "__main__":
